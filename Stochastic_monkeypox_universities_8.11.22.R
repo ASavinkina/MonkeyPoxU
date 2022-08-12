@@ -4,17 +4,23 @@ library(ggplot2)
 
 # Intiial conditions
 
-Yale_undegrad_pop = 6500
+Yale_undegrad_pop = 6500 # total population
+initial_inf = 10 # initial infections
+exogshock =0 #size of exogenous shock. 0 for no exogenous shocks, >1 for superspreader events
+exograte = 1/10 # rate of exogenous shocks
+diagrate = 1/10 # daily rate of diagnosis of infectious cases
+quarduration = 1/14 # duration of quarantine for non-infected
+studentcontacts = 5 # students quarantined per diagnosed case
 
 init.values = c(
-  S_h = Yale_undegrad_pop-10, P_h = 0, I_h = 10, Dx0_h=0, Dx_h=0, 
+  S_h = Yale_undegrad_pop-initial_inf, P_h = 0, I_h = initial_inf, Dx0_h=0, Dx_h=0, 
   Qs_h=0, Qi_h=0, R_h=0
 )
 
 # Specify all transitions
 transitions = list(
   c(S_h = -1, P_h = +1), # movement from susceptible to presymptomatic, endogenous infection
-  c(S_h = -1, P_h = +1), # movement from susceptible to presymptomatic, exogenous infection 
+  c(S_h = -exogshock, P_h = +exogshock), # movement from susceptible to presymptomatic, exogenous infection 
   c(S_h= -1, Qs_h= +1), #movement from susceptible to quarantined susceptible
   c(S_h= -1, Qi_h= +1), #movement from susceptible to quarantined infected
   c(Qs_h= -1, S_h= +1), #movement from quarantined susceptible back to susceptible
@@ -32,7 +38,7 @@ transitions = list(
 RateF <- function(x, pars, times) {
   return(c(
     pars$beta_h*x["S_h"]*x["I_h"]/(x["S_h"] + x["P_h"] + x["I_h"] + x["R_h"]), # movement from susceptible to presymptomatic, endogenous infection
-    pars$theta*x["S_h"], # movement from susceptible to presymptomatic, exogenous infection
+    pars$theta, # movement from susceptible to presymptomatic, exogenous infection
     pars$iota*x["Dx0_h"]*(1-pars$attackrate), #movement from susceptible to quarantined susceptible (based on number newly diagnosed)
     pars$iota*x["Dx0_h"]*pars$attackrate, #movement from susceptible to quarantined infected (based on number newly diagnosed)
     pars$omega*x["Qs_h"], #movement from quarantined susceptible back to susceptible
@@ -49,14 +55,14 @@ RateF <- function(x, pars, times) {
 pars = list(
   beta_h= 1.1 * (1/14), #(6*0.1)*(1/14), # beta
   gamma= 1/14, #incubation period
-  delta=1/10,  #diagnosis rate
+  delta= diagrate,  #diagnosis rate
   rho= 1/14, #recovery rate
   tau = 1, #rate of moving from newly diagnosed to diagnosed
-  iota= 5,
-  mu = 1/14,
-  omega = 1/14, #length of quarantine for susceptible
+  iota= studentcontacts, # students quarantined per diagnosed case
+  mu = 1/14, #incubation period for those in quarantine
+  omega = quarduration, #length of quarantine for susceptible
   attackrate=0.1, 
-  theta= (1/10)*(1/100) #rate of exogenous shocks
+  theta= exograte #rate of exogenous shocks
 )
 
 
@@ -133,20 +139,33 @@ for (i in 1:runs) {
   
 }
 
-#tail(results)
+
+# graph of presymptomatic over time
 
 ggplot(data=results_all_presymptomatic, aes(x=time, y=P_h, color=run)) + geom_line() +
   theme_classic() + theme(legend.position = "none") 
+
+# graph of infected over time
+
 ggplot(data=results_all_infected, aes(x=time, y=I_h, color=run)) + geom_line() +
   theme_classic() + theme(legend.position = "none") 
-ggplot(data=results_all_diagnosed, aes(x=time, y=Dx_h, color=run)) + geom_line()+
-  theme_classic() + theme(legend.position = "none") 
-ggplot(data=results_all_recovered, aes(x=time, y=R_h, color=run)) + geom_line()+
-  theme_classic() + theme(legend.position = "none") 
+
+# graph of new diagnoses
 
 ggplot(data=results_all_newlydiagnosed, aes(x=time, y=Dx0_h, color=run)) + geom_line()+
   theme_classic() + theme(legend.position = "none") 
 
+# graph of diagnosed (and isolated) over time
+
+ggplot(data=results_all_diagnosed, aes(x=time, y=Dx_h, color=run)) + geom_line()+
+  theme_classic() + theme(legend.position = "none") 
+
+#graph of recovered over time
+
+ggplot(data=results_all_recovered, aes(x=time, y=R_h, color=run)) + geom_line()+
+  theme_classic() + theme(legend.position = "none") 
+
+# graph of all isolated over time
 
 ggplot(data=results_all_quarantined, aes(x=time, y=Qs_h, color=run)) + geom_line()+
   theme_classic() + theme(legend.position = "none") 
