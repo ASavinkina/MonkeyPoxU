@@ -6,11 +6,12 @@ library(ggplot2)
 
 Yale_undegrad_pop = 6500 # total population
 initial_inf = 10 # initial infections
-exogshock =0 #size of exogenous shock. 0 for no exogenous shocks, >1 for superspreader events
-exograte = 1/10 # rate of exogenous shocks
+exogshock =1 #size of exogenous shock. 0 for no exogenous shocks, >1 for superspreader events
+exograte = 1/30 # rate of exogenous shocks
 diagrate = 1/10 # daily rate of diagnosis of infectious cases
 quarduration = 1/14 # duration of quarantine for non-infected
 studentcontacts = 5 # students quarantined per diagnosed case
+R0_h = 1.1
 
 init.values = c(
   S_h = Yale_undegrad_pop-initial_inf, P_h = 0, I_h = initial_inf, Dx0_h=0, Dx_h=0, 
@@ -39,8 +40,10 @@ RateF <- function(x, pars, times) {
   return(c(
     pars$beta_h*x["S_h"]*x["I_h"]/(x["S_h"] + x["P_h"] + x["I_h"] + x["R_h"]), # movement from susceptible to presymptomatic, endogenous infection
     pars$theta, # movement from susceptible to presymptomatic, exogenous infection
-    pars$iota*x["Dx0_h"]*(1-pars$attackrate), #movement from susceptible to quarantined susceptible (based on number newly diagnosed)
-    pars$iota*x["Dx0_h"]*pars$attackrate, #movement from susceptible to quarantined infected (based on number newly diagnosed)
+    ifelse(x["P_h"]>1,pars$iota*x["Dx0_h"]*(1-pars$attackrate),pars$iota*x["Dx0_h"]),
+    #pars$iota*x["Dx0_h"]*(1-pars$attackrate), #movement from susceptible to quarantined susceptible (based on number newly diagnosed)
+    ifelse(x["P_h"]>1, pars$iota*x["Dx0_h"]*pars$attackrate, 0), #movement from susceptible to quarantined infected (based on number newly diagnosed)
+    #pars$iota*x["Dx0_h"]*pars$attackrate
     pars$omega*x["Qs_h"], #movement from quarantined susceptible back to susceptible
     pars$gamma*x["P_h"], #movement from presymptomatic to infected (duration of incubation)
     pars$delta*x["I_h"], #movement from infected to diagnosed
@@ -53,7 +56,7 @@ RateF <- function(x, pars, times) {
 
 # Setting parameters
 pars = list(
-  beta_h= 1.1 * (1/14), #(6*0.1)*(1/14), # beta
+  beta_h= R0_h * (1/14), #(6*0.1)*(1/14), # beta
   gamma= 1/14, #incubation period
   delta= diagrate,  #diagnosis rate
   rho= 1/14, #recovery rate
@@ -173,6 +176,7 @@ ggplot(data=results_all_quarantined, aes(x=time, y=Qs_h, color=run)) + geom_line
 mean(results_all_quarantined$Qs_h)
 min(results_all_quarantined$Qs_h)
 max(results_all_quarantined$Qs_h)
+
 
 
 
