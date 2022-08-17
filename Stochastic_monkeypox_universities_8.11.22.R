@@ -6,12 +6,12 @@ library(ggplot2)
 
 Yale_undegrad_pop = 6500 # total population
 initial_inf = 10 # initial infections
-exogshock =1 #size of exogenous shock. 0 for no exogenous shocks, >1 for superspreader events
+exogshock =0 #size of exogenous shock. 0 for no exogenous shocks, >1 for superspreader events
 exograte = 1/30 # rate of exogenous shocks
 diagrate = 1/10 # daily rate of diagnosis of infectious cases
 quarduration = 1/14 # duration of quarantine for non-infected
 studentcontacts = 5 # students quarantined per diagnosed case
-R0_h = 1.1
+R0_h = 1.5
 
 init.values = c(
   S_h = Yale_undegrad_pop-initial_inf, P_h = 0, I_h = initial_inf, Dx0_h=0, Dx_h=0, 
@@ -23,7 +23,7 @@ transitions = list(
   c(S_h = -1, P_h = +1), # movement from susceptible to presymptomatic, endogenous infection
   c(S_h = -exogshock, P_h = +exogshock), # movement from susceptible to presymptomatic, exogenous infection 
   c(S_h= -1, Qs_h= +1), #movement from susceptible to quarantined susceptible
-  c(S_h= -1, Qi_h= +1), #movement from susceptible to quarantined infected
+  c(P_h= -1, Qi_h= +1), #movement from susceptible to quarantined infected
   c(Qs_h= -1, S_h= +1), #movement from quarantined susceptible back to susceptible
   c(P_h = -1, I_h = +1), #movement from presymptomatic to infected 
   c(I_h = -1, Dx0_h = +1),  #movement from infected to newly diagnosed
