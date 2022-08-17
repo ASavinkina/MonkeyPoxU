@@ -212,37 +212,43 @@ shinyServer(function(input, output) {
     # graph of presymptomatic over time
     
     presymp_plot <- ggplot(data=results_all_presymptomatic, aes(x=time, y=P_h, color=run)) + geom_line() +
-        theme_classic() + theme(legend.position = "none") + ylab("Number infected presymptomatic")
+        theme_classic() + theme(legend.position = "none") + ylab("Number infected presymptomatic") +
+        xlab("Days")
     
     
     # graph of infected over time
     
     infected_plot <- ggplot(data=results_all_infected, aes(x=time, y=I_h, color=run)) + geom_line() +
-        theme_classic() + theme(legend.position = "none") + ylab("Number infected symptomatic")
+        theme_classic() + theme(legend.position = "none") + ylab("Number infected symptomatic") +
+        xlab("Days")
     
     
     # graph of new diagnoses
     
     ggplot(data=results_all_newlydiagnosed, aes(x=time, y=Dx0_h, color=run)) + geom_line()+
-        theme_classic() + theme(legend.position = "none") + ylab("Number newly diagnosed")
+        theme_classic() + theme(legend.position = "none") + ylab("Number newly diagnosed") +
+        xlab("Days")
     
     
     # graph of diagnosed (and isolated) over time
     
     diagnosed_plot <- ggplot(data=results_all_diagnosed, aes(x=time, y=Dx_h, color=run)) + geom_line()+
-        theme_classic() + theme(legend.position = "none") + ylab("Number diagnosed (cumulative)")
+        theme_classic() + theme(legend.position = "none") + ylab("Number in isolation (diagnosed+)") +
+        xlab("Days")
     
     
     #graph of recovered over time
     
     recovered_plot <- ggplot(data=results_all_recovered, aes(x=time, y=R_h, color=run)) + geom_line()+
-        theme_classic() + theme(legend.position = "none") + ylab("Number recovered (cumulative)")
+        theme_classic() + theme(legend.position = "none") + ylab("Number recovered (cumulative)") +
+        xlab("Days")
     
     
     # graph of all isolated over time
     
     quarantined_plot <- ggplot(data=results_all_quarantined, aes(x=time, y=Qs_h, color=run)) + geom_line()+
-        theme_classic() + theme(legend.position = "none") + ylab("Number in quarantine (infected and not infected)")
+        theme_classic() + theme(legend.position = "none") + ylab("Number in quarantine (+ and -)") +
+        xlab("Days")
     
     mean(results_all_quarantined$Qs_h)
     min(results_all_quarantined$Qs_h)

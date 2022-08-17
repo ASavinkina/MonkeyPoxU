@@ -58,7 +58,11 @@ shinyUI(fluidPage(
                         "Number of infections coming in from outside of university community per week",
                         min = 0,
                         max = 10,
-                        value = 0)),
+                        value = 0),
+            
+            submitButton(text = "Apply Changes", icon = NULL, width = NULL)),
+        
+        
         
 
 

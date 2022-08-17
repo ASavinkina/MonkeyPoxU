@@ -1,0 +1,13 @@
+name: MonkeyPoxUApp
+title: MonkeyPoxUApp
+username:
+account: savinkina
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 6799131
+bundleId: 6210856
+url: https://savinkina.shinyapps.io/MonkeyPoxUApp/
+when: 1660752253.1425
+lastSyncTime: 1660752253.14252
+asMultiple: FALSE
+asStatic: FALSE
