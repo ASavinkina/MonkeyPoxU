@@ -10,6 +10,9 @@
 library(shiny)
 library(adaptivetau)
 library(ggplot2)
+library(tidyverse)
+library(shinydashboard)
+library(scales)
 
 # Define server logic required to draw a histogram
 shinyServer(function(input, output) {
@@ -62,9 +65,9 @@ shinyServer(function(input, output) {
     initial_inf= input$initial_inf #input$initial_inf # initial infections
 
     exogshock =1 #size of exogenous shock. 0 for no exogenous shocks, >1 for superspreader events
-    exograte = ifelse(input$exograte==0, 0, input$exograte/7)  # rate of exogenous shocks
+    exograte = ifelse(input$exograte==0, 0, input$exograte/30)  # rate of exogenous shocks
     diagrate = input$diagrate # daily rate of diagnosis of infectious cases
-    quarduration = 1/input$quarduration  # duration of quarantine for non-infected
+    quarduration = #1/input$quarduration  # duration of quarantine for non-infected
     studentcontacts = input$studentcontacts # students quarantined per diagnosed case
     R0_h= input$R0_h
         
@@ -122,14 +125,14 @@ shinyServer(function(input, output) {
     
     # Setting parameters
     pars = list(
-        beta_h= R0_h * (1/14), #(6*0.1)*(1/14), # beta
-        gamma= 1/14, #incubation period
+        beta_h= R0_h * (1/21), #(6*0.1)*(1/14), # beta
+        gamma= 1/7.6, #incubation period
         delta= diagrate,  #diagnosis rate
-        rho= 1/14, #recovery rate
+        rho= 1/21, #recovery rate
         tau = 1, #rate of moving from newly diagnosed to diagnosed
         iota= studentcontacts, # students quarantined per diagnosed case
-        mu = 1/14, #incubation period for those in quarantine
-        omega = quarduration, #length of quarantine for susceptible
+        mu = 1/7.6, #incubation period for those in quarantine
+        omega = 1/7.6, #length of quarantine for susceptible
         attackrate=0.1, 
         theta= exograte #rate of exogenous shocks
     )
@@ -147,7 +150,6 @@ shinyServer(function(input, output) {
     
     #  Create dataset
     
-    runs=100
     
     
     results_all_presymptomatic <- data.frame(matrix(0, nrow=0, ncol=3))
@@ -208,6 +210,110 @@ shinyServer(function(input, output) {
         
     }
     
+
+    # Total infections
+    
+    total_infections <- results_all_recovered
+    
+    total_infections$allinfections <- total_infections$R_h + results_all_diagnosed$Dx_h + results_all_newlydiagnosed$Dx0_h +
+        results_all_infected$I_h + results_all_presymptomatic$P_h
+    
+    total_infections2 <- total_infections[which(total_infections$time==100),]
+    
+    median_infections <- median(total_infections2$allinfections)
+    #l95_infections <- quantile(total_infections2$allinfections, probs = 0.05)
+    #u95_infections <- quantile(total_infections2$allinfections, probs = 0.95)
+    
+    # Average quarantine beds
+    
+    quarantine_capacity_count <- input$quarcapacity
+    
+    results_all_quarantined2 <- results_all_quarantined
+    
+    results_all_quarantined2$time2 <- round(results_all_quarantined2$time)
+    
+    results_all_quarantined3 <- results_all_quarantined2 %>%
+        group_by(run,time2) %>%
+        summarise_at(vars(Qs_h), list(maxQ = max))
+    
+    # Time exceeding quarantine capacity
+    
+    time_quar_past_cap <- percent(length(which(results_all_quarantined3$maxQ>quarantine_capacity_count))/length(results_all_quarantined3$maxQ))
+    
+    # Likelihood exceeding quarantine capacity
+    
+    results_all_quarantined_likelihood <- results_all_quarantined3 %>%
+        group_by(run) %>%
+        summarise_at(vars(maxQ), list(maxQQ = max))
+    
+    likelihood_quar_past_cap <- percent(length(which(results_all_quarantined_likelihood$maxQQ>quarantine_capacity_count))/length(results_all_quarantined_likelihood$maxQQ))
+    
+    results_all_quarantined4 <- results_all_quarantined3 %>%
+        group_by(time2) %>%
+        summarise_at(vars(maxQ), list(nmin=min, Q1=~quantile(., probs = 0.25), Q95l=~quantile(., probs = 0.05),
+                                      median=median, Q3=~quantile(., probs = 0.75),Q95u=~quantile(., probs = 0.95),
+                                      max=max))
+    
+    avg_quarantine_plot <- ggplot(data=results_all_quarantined4, aes(x=time2, y=median)) + geom_line() +
+        theme_classic() + theme(legend.position = "none") + 
+        geom_ribbon(aes(ymin = Q95l, ymax = Q95u), alpha = 0.1) + xlab("Days") + ylab("Average number of quarantined students") +
+        ggtitle("Average number of quarantined \nstudents by day, and 95% interval")
+    
+    # Average infections students
+    
+    results_all_infected2 <- results_all_infected
+    
+    results_all_infected2$time2 <- round(results_all_infected2$time)
+    
+    results_all_infected3 <- results_all_infected2 %>%
+        group_by(run,time2) %>%
+        summarise_at(vars(I_h), list(maxI = max))
+    
+    results_all_infected4 <- results_all_infected3 %>%
+        group_by(time2) %>%
+        summarise_at(vars(maxI), list(nmin=min, Q1=~quantile(., probs = 0.25), Q95l=~quantile(., probs = 0.05),
+                                      median=median, Q3=~quantile(., probs = 0.75),Q95u=~quantile(., probs = 0.95),
+                                      max=max))
+    avg_infectious_plot <- ggplot(data=results_all_infected4, aes(x=time2, y=median)) + geom_line() +
+        theme_classic() + theme(legend.position = "none") + 
+        geom_ribbon(aes(ymin = Q95l, ymax = Q95u), alpha = 0.1) + xlab("Days") + ylab("Average number of infectious students") +
+        ggtitle("Average number of infectious \nstudents by day, and 95% interval")
+    
+    # Average isolated students 
+    
+    isolation_capacity_count <- input$isocapacity
+    
+    results_all_diagnosed2 <- results_all_diagnosed 
+    
+    results_all_diagnosed2 <- cbind(results_all_diagnosed, results_all_newlydiagnosed$Dx0_h)
+    
+    results_all_diagnosed2$total <- results_all_diagnosed2$Dx_h + results_all_diagnosed2$`results_all_newlydiagnosed$Dx0_h`
+    
+    results_all_diagnosed2$time2 <- round(results_all_diagnosed2$time)
+    
+    results_all_diagnosed3 <- results_all_diagnosed2 %>%
+        group_by(run,time2) %>%
+        summarise_at(vars(total), list(maxD = max))
+    
+    time_iso_past_cap <- percent(length(which(results_all_diagnosed3$maxD>isolation_capacity_count))/length(results_all_diagnosed3$maxD))
+    
+    results_all_diagnosed_likelihood <- results_all_diagnosed3 %>%
+        group_by(run) %>%
+        summarise_at(vars(maxD), list(maxDD = max))
+    
+    likelihood_iso_past_cap <- percent(length(which(results_all_diagnosed_likelihood$maxDD>isolation_capacity_count))/length(results_all_diagnosed_likelihood$maxDD))
+    
+    results_all_diagnosed4 <- results_all_diagnosed3 %>%
+        group_by(time2) %>%
+        summarise_at(vars(maxD), list(nmin=min, Q1=~quantile(., probs = 0.25), Q95l=~quantile(., probs = 0.05),
+                                      median=median, Q3=~quantile(., probs = 0.75),Q95u=~quantile(., probs = 0.95),
+                                      max=max))
+    
+    avg_isolated_plot <- ggplot(data=results_all_diagnosed4, aes(x=time2, y=median)) + geom_line() +
+        theme_classic() + theme(legend.position = "none") + 
+        geom_ribbon(aes(ymin = Q95l, ymax = Q95u), alpha = 0.1) + xlab("Days") + ylab("Average number of isolated students") +
+        ggtitle("Average number of isolated \nstudents by day, and 95% interval")
+    
     
     # graph of presymptomatic over time
     
@@ -254,14 +360,39 @@ shinyServer(function(input, output) {
     min(results_all_quarantined$Qs_h)
     max(results_all_quarantined$Qs_h)
     
-    # output$QPlot <- renderPlot(quarantined_plot)
-    # output$DPlot <- renderPlot(diagnosed_plot)
-    # output$IPlot <- renderPlot(infected_plot)
-    # output$RPlot <- renderPlot(recovered_plot)
     
-    multiplot(quarantined_plot,diagnosed_plot,infected_plot,recovered_plot, cols=2)
-
+    output$DPlot <- renderPlot(avg_isolated_plot, height=300, width=300)
+    output$QPlot <- renderPlot(avg_quarantine_plot, height=300, width=300)
+    output$IPlot <- renderPlot(avg_infectious_plot, height=300, width=300)
+    output$D1Plot <- renderPlot(diagnosed_plot, height=300, width=300)
+    output$Q1Plot <- renderPlot(quarantined_plot, height=300, width=300)
+    output$I1Plot <- renderPlot(infected_plot, height=300, width=300)
+    output$R1Plot <- renderPlot(recovered_plot, height=300, width=300)
+    
+    #multiplot1(avg_isolated_plot, avg_quarantine_plot, avg_infectious_plot,quarantined_plot,diagnosed_plot,infected_plot,recovered_plot, cols=2)
+    
+    #multiplot2(avg_isolated_plot, avg_quarantine_plot, avg_infectious_plot, cols=2)
+    
+    output$isocaplikelihood <- renderValueBox({
+        valueBox(likelihood_iso_past_cap, "Likelihood of exceeding isolation capacity")
+    })
+    
+    output$isocaptime <- renderValueBox({
+        valueBox(time_iso_past_cap, "% of time isolation capacity exceeded")
+    })
+    
+    output$quarcaplikelihood <- renderValueBox({
+        valueBox(likelihood_quar_past_cap, "Likelihood of exceeding quarantine capacity")
+    })
+    
+    output$quarcaptime <- renderValueBox({
+        valueBox(time_quar_past_cap, "% of time isolation capacity exceeded")
+    })
+    
+    output$medianinfections <- renderValueBox({
+        valueBox(median_infections, "Median number infections in 100 days")
+    })
 
 })
     
-})
+     })

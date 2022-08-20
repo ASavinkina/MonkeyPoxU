@@ -1,5 +1,7 @@
 library(adaptivetau)
 library(ggplot2)
+library(tidyverse)
+library(scales)
 
 
 # Intiial conditions
@@ -141,6 +143,202 @@ for (i in 1:runs) {
   
   
 }
+
+
+# # Quarantine beds version 1: likelihood of needed beds by time 
+# 
+# results_all_quarantined$summary <- ifelse(results_all_quarantined$Qs_h==0, "Zero",
+#                                           ifelse(results_all_quarantined$Qs_h>50, "Greater than 50",
+#                                                  ifelse(results_all_quarantined$Qs_h>30, "30 to 40",
+#                                                         ifelse(results_all_quarantined$Qs_h>20, "20 to 30",
+#                                                                ifelse(results_all_quarantined$Qs_h>10, "10 to 20",
+#                                                                       ifelse(results_all_quarantined$Qs_h>5, "5 to 10","Less than 5"))))))
+# 
+# quarantine_summary <- data.frame(matrix(nrow=7, ncol=2))
+# 
+# quarantine_summary[,1] <- c("0","Less than 5", "Greater than 5", "Greater than 10", "Greater than 20", "Greater than 30",
+#                             "Greater than 50")
+# 
+# 
+# quarantine_summary[1,2] <- length(which(results_all_quarantined$Qs_h==0))/length(results_all_quarantined$Qs_h)
+# quarantine_summary[2,2] <- length(which(results_all_quarantined$Qs_h<=5))/length(results_all_quarantined$Qs_h)
+# quarantine_summary[3,2] <- length(which(results_all_quarantined$Qs_h>5))/length(results_all_quarantined$Qs_h)
+# quarantine_summary[4,2] <- length(which(results_all_quarantined$Qs_h>10))/length(results_all_quarantined$Qs_h)
+# quarantine_summary[5,2] <- length(which(results_all_quarantined$Qs_h>20))/length(results_all_quarantined$Qs_h)
+# quarantine_summary[6,2] <- length(which(results_all_quarantined$Qs_h>30))/length(results_all_quarantined$Qs_h)
+# quarantine_summary[7,2] <- length(which(results_all_quarantined$Qs_h>50))/length(results_all_quarantined$Qs_h)
+# 
+# 
+# quarantine_summary$X1 <- factor(quarantine_summary$X1,levels = c("0","Less than 5", "Greater than 5", "Greater than 10", "Greater than 20", "Greater than 30",
+#                                                                  "Greater than 50"))
+# 
+# quarantinebeds <- ggplot(quarantine_summary, aes(x=X2, y=X1, fill=X1)) + geom_bar(stat="identity") + 
+#   theme_classic() + theme(legend.position="none") + xlab("") + ylab("") + 
+#   scale_x_continuous(labels = scales::percent) + ggtitle("Number of quarantine beds needed, % likelihood")
+
+
+# Average quarantine beds
+
+results_all_quarantined2 <- results_all_quarantined
+
+results_all_quarantined2$time2 <- round(results_all_quarantined2$time)
+
+results_all_quarantined3 <- results_all_quarantined2 %>%
+  group_by(run,time2) %>%
+  summarise_at(vars(Qs_h), list(maxQ = max))
+
+# Time exceeding quarantine capacity
+
+time_quar_past_cap <- percent(length(which(results_all_quarantined3$maxQ>quarantine_capacity_count))/length(results_all_quarantined3$maxQ))
+
+# Likelihood exceeding quarantine capacity
+
+results_all_quarantined_likelihood <- results_all_quarantined3 %>%
+  group_by(run) %>%
+  summarise_at(vars(maxQ), list(maxQQ = max))
+
+likelihood_quar_past_cap <- percent(length(which(results_all_quarantined_likelihood$maxQQ>quarantine_capacity_count))/length(results_all_quarantined_likelihood$maxQQ))
+
+results_all_quarantined4 <- results_all_quarantined3 %>%
+  group_by(time2) %>%
+  summarise_at(vars(maxQ), list(nmin=min, Q1=~quantile(., probs = 0.25), Q95l=~quantile(., probs = 0.05),
+                                median=median, Q3=~quantile(., probs = 0.75),Q95u=~quantile(., probs = 0.95),
+                                max=max))
+ggplot(data=results_all_quarantined4, aes(x=time2, y=median)) + geom_line() +
+  theme_classic() + theme(legend.position = "none") + 
+  geom_ribbon(aes(ymin = Q95l, ymax = Q95u), alpha = 0.1) + xlab("Days") + ylab("Average number of quarantined students") +
+  ggtitle("Average number of quarantined \nstudents by day, and 95% interval")
+
+# Average infections students
+
+results_all_infected2 <- results_all_infected
+
+results_all_infected2$time2 <- round(results_all_infected2$time)
+
+results_all_infected3 <- results_all_infected2 %>%
+  group_by(run,time2) %>%
+  summarise_at(vars(I_h), list(maxI = max))
+
+results_all_infected4 <- results_all_infected3 %>%
+  group_by(time2) %>%
+  summarise_at(vars(maxI), list(nmin=min, Q1=~quantile(., probs = 0.25), Q95l=~quantile(., probs = 0.05),
+                                median=median, Q3=~quantile(., probs = 0.75),Q95u=~quantile(., probs = 0.95),
+                                max=max))
+ggplot(data=results_all_infected4, aes(x=time2, y=median)) + geom_line() +
+  theme_classic() + theme(legend.position = "none") + 
+  geom_ribbon(aes(ymin = Q95l, ymax = Q95u), alpha = 0.1) + xlab("Days") + ylab("Average number of infectious students") +
+  ggtitle("Average number of infectious \nstudents by day, and 95% interval")
+
+# Average isolated students 
+
+isolation_capacity_count= 5
+
+results_all_diagnosed2 <- results_all_diagnosed 
+
+results_all_diagnosed2 <- cbind(results_all_diagnosed, results_all_newlydiagnosed$Dx0_h)
+
+results_all_diagnosed2$total <- results_all_diagnosed2$Dx_h + results_all_diagnosed2$`results_all_newlydiagnosed$Dx0_h`
+
+results_all_diagnosed2$time2 <- round(results_all_diagnosed2$time)
+
+results_all_diagnosed3 <- results_all_diagnosed2 %>%
+  group_by(run,time2) %>%
+  summarise_at(vars(total), list(maxD = max))
+
+time_iso_past_cap <- percent(length(which(results_all_diagnosed3$maxD>isolation_capacity_count))/length(results_all_diagnosed3$maxD))
+
+results_all_diagnosed_likelihood <- results_all_diagnosed3 %>%
+  group_by(run) %>%
+  summarise_at(vars(maxD), list(maxDD = max))
+
+likelihood_iso_past_cap <- percent(length(which(results_all_diagnosed_likelihood$maxDD>isolation_capacity_count))/length(results_all_diagnosed_likelihood$maxDD))
+
+results_all_diagnosed4 <- results_all_diagnosed3 %>%
+  group_by(time2) %>%
+  summarise_at(vars(maxD), list(nmin=min, Q1=~quantile(., probs = 0.25), Q95l=~quantile(., probs = 0.05),
+                                median=median, Q3=~quantile(., probs = 0.75),Q95u=~quantile(., probs = 0.95),
+                                max=max))
+
+ggplot(data=results_all_diagnosed4, aes(x=time2, y=median)) + geom_line() +
+  theme_classic() + theme(legend.position = "none") + 
+  geom_ribbon(aes(ymin = Q95l, ymax = Q95u), alpha = 0.1) + xlab("Days") + ylab("Average number of isolated students") +
+  ggtitle("Average number of isolated \nstudents by day, and 95% interval")
+
+# Likelihood of an outbreak
+
+# Likelihood of exceeding isolation capacity
+
+isolation_capacity_count <- 5
+
+isolation_capacity <- cbind(results_all_diagnosed, results_all_newlydiagnosed$Dx0_h)
+
+isolation_capacity$total <- isolation_capacity$Dx_h + isolation_capacity$`results_all_newlydiagnosed$Dx0_h`
+
+isolation_capacity_likelihood <- isolation_capacity %>%
+  group_by(run) %>%
+  summarise_at(vars(total), list(maxL = max))
+
+likelihood_iso_past_cap <- percent(length(which(isolation_capacity_likelihood$maxL>isolation_capacity_count))/length(isolation_capacity_likelihood$maxL))
+
+# Time exceeding isolation capacity
+
+time_iso_past_cap <- percent(length(which(isolation_capacity$total>isolation_capacity_count))/length(isolation_capacity$total))
+
+
+# Total infections
+
+total_infections <- results_all_recovered
+  
+total_infections$allinfections <- total_infections$R_h + results_all_diagnosed$Dx_h + results_all_newlydiagnosed$Dx0_h +
+                    results_all_infected$I_h + results_all_presymptomatic$P_h
+
+total_infections2 <- total_infections[which(total_infections$time==100),]
+
+median_infections <- median(total_infections2$allinfections)
+l95_infections <- quantile(total_infections2$allinfections, probs = 0.05)
+u95_infections <- quantile(total_infections2$allinfections, probs = 0.95)
+
+
+# Max number of quarantined students  
+
+results_all_quarantined2 <- results_all_quarantined %>% group_by(run) %>% summarise(Qs_h = max(Qs_h))
+results_all_quarantined2$summary <- ifelse(results_all_quarantined2$Qs_h==0, "Zero",
+                                           ifelse(results_all_quarantined2$Qs_h>50, "Greater than 50",
+                                                  ifelse(results_all_quarantined2$Qs_h>30, "30 to 50",
+                                                         ifelse(results_all_quarantined2$Qs_h>20, "20 to 30",
+                                                                ifelse(results_all_quarantined2$Qs_h>10, "10 to 20",
+                                                                       ifelse(results_all_quarantined2$Qs_h>5, "5 to 10","Less than 5"))))))
+
+
+results_all_quarantined2$summary <- factor(results_all_quarantined2$summary,levels = c("Zero","Less than 5", "5 to 10", "10 to 20", "20 to 30", "30 to 50",
+                                                                 "Greater than 50"))
+ggplot(results_all_quarantined2, aes(y=summary,fill=summary)) + geom_bar()+ 
+  theme_classic() + theme(legend.position="none") + xlab("") + ylab("") + 
+  ggtitle("Max number of quarantine beds needed, % likelihood")
+
+
+# Max number of isolated students  
+
+results_all_diagnosed <- cbind(results_all_diagnosed, results_all_newlydiagnosed$Dx0_h)
+
+
+results_all_diagnosed$total <- results_all_diagnosed$Dx_h + results_all_diagnosed$`results_all_newlydiagnosed$Dx0_h`
+
+
+results_all_diagnosed2 <- results_all_diagnosed %>% group_by(run) %>% summarise(total = max(total))
+results_all_diagnosed2$summary <- ifelse(results_all_diagnosed2$total==0, "Zero",
+                                           ifelse(results_all_diagnosed2$total>50, "Greater than 50",
+                                                  ifelse(results_all_diagnosed2$total>30, "30 to 50",
+                                                         ifelse(results_all_diagnosed2$total>20, "20 to 30",
+                                                                ifelse(results_all_diagnosed2$total>10, "10 to 20",
+                                                                       ifelse(results_all_diagnosed2$total>5, "5 to 10","Less than 5"))))))
+
+
+results_all_diagnosed2$summary <- factor(results_all_diagnosed2$summary,levels = c("Zero","Less than 5", "5 to 10", "10 to 20", "20 to 30", "30 to 50",
+                                                                                       "Greater than 50"))
+ggplot(results_all_diagnosed2, aes(y=summary,fill=summary)) + geom_bar()+ 
+  theme_classic() + theme(legend.position="none") + xlab("") + ylab("") + 
+  ggtitle("Max number of quarantine beds needed, % likelihood")
 
 
 # graph of presymptomatic over time
