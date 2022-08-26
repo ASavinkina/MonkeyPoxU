@@ -66,8 +66,10 @@ shinyServer(function(input, output) {
 
     exogshock =1 #size of exogenous shock. 0 for no exogenous shocks, >1 for superspreader events
     exograte = ifelse(input$exograte==0, 0, input$exograte/30)  # rate of exogenous shocks
-    diagrate = input$diagrate # daily rate of diagnosis of infectious cases
-    quarduration = #1/input$quarduration  # duration of quarantine for non-infected
+    recoveryrate = 1/21
+    diagrate = ifelse(input$diagrate>0.95, 1, (input$diagrate*recoveryrate)/(1-input$diagrate)) # daily rate of diagnosis of infectious cases
+    isorate = 1/input$isoduration #duration of isolation
+    quarrate = 1/input$quarduration  # duration of quarantine 
     studentcontacts = input$studentcontacts # students quarantined per diagnosed case
     R0_h= input$R0_h
         
@@ -91,8 +93,9 @@ shinyServer(function(input, output) {
         c(S_h = -1, P_h = +1), # movement from susceptible to presymptomatic, endogenous infection
         c(S_h = -1, P_h = +1), # movement from susceptible to presymptomatic, exogenous infection 
         c(S_h= -1, Qs_h= +1), #movement from susceptible to quarantined susceptible
-        c(P_h= -1, Qi_h= +1), #movement from susceptible to quarantined infected
+        c(P_h= -1, Qi_h= +1), #movement from presymptomatuc to quarantined infected
         c(Qs_h= -1, S_h= +1), #movement from quarantined susceptible back to susceptible
+        c(Qi_h= -1, I_h= +1), #movement from quarantined infected to infected
         c(P_h = -1, I_h = +1), #movement from presymptomatic to infected 
         c(I_h = -1, Dx0_h = +1),  #movement from infected to newly diagnosed
         c(Dx0_h = -1, Dx_h = +1), #movement from newly diagnosed to diagnosed
@@ -113,12 +116,13 @@ shinyServer(function(input, output) {
             ifelse(x["P_h"]>1, pars$iota*x["Dx0_h"]*pars$attackrate, 0), #movement from susceptible to quarantined infected (based on number newly diagnosed)
             #pars$iota*x["Dx0_h"]*pars$attackrate
             pars$omega*x["Qs_h"], #movement from quarantined susceptible back to susceptible
+            pars$omega*x["Qi_h"], #movement from quarantined infected to infected
             pars$gamma*x["P_h"], #movement from presymptomatic to infected (duration of incubation)
             pars$delta*x["I_h"], #movement from infected to diagnosed
             pars$tau*x["Dx0_h"], #movement from newly diagnosed to diagnosed
             pars$mu*x["Qi_h"], #movement from quarantined infected to diagnosed
             pars$rho*x["I_h"], #movement from infected to recovered
-            pars$rho*x["Dx_h"] #movement from diagnosed to recovered 
+            pars$omicron*x["Dx_h"] #movement from diagnosed to recovered 
         ))
     }
 
@@ -128,23 +132,25 @@ shinyServer(function(input, output) {
         beta_h= R0_h * (1/21), #(6*0.1)*(1/14), # beta
         gamma= 1/7.6, #incubation period
         delta= diagrate,  #diagnosis rate
-        rho= 1/21, #recovery rate
+        rho= recoveryrate, #recovery rate
         tau = 1, #rate of moving from newly diagnosed to diagnosed
         iota= studentcontacts, # students quarantined per diagnosed case
         mu = 1/7.6, #incubation period for those in quarantine
-        omega = 1/7.6, #length of quarantine for susceptible
-        attackrate=0.1, 
-        theta= exograte #rate of exogenous shocks
+        omega = quarrate, #length of quarantine for susceptible
+        attackrate=0.2, 
+        theta= exograte, #rate of exogenous shocks
+        omicron = isorate
     )
     
     
     # Running stochastic model
     
-    results = as.data.frame(ssa.adaptivetau(init.values, 
-                                            transitions, 
-                                            RateF, 
-                                            pars, 
-                                            tf=100))
+    
+    # results = as.data.frame(ssa.adaptivetau(init.values, 
+    #                                         transitions, 
+    #                                         RateF, 
+    #                                         pars, 
+    #                                         tf=100))
     
     #Running stochastic model 1,000 times
     
@@ -166,6 +172,9 @@ shinyServer(function(input, output) {
     colnames(results_all_quarantined) <- c("time", "Dx0_h", "run")
     
     runs=100
+    
+    set.seed(1)
+    
     
     for (i in 1:runs) {
         
@@ -220,9 +229,22 @@ shinyServer(function(input, output) {
     
     total_infections2 <- total_infections[which(total_infections$time==100),]
     
+    output$maxinfectionsplot <- renderPlot(hist(total_infections2$allinfections,
+                                             main="",xlab="Cumulative number of cases at 100 days",
+                                             ylab="Percent likelihood"),
+                                            width=300, height=300)
+    
+    # maxinfectionsplot <- ggplot(total_infections2, aes(x=allinfections)) + 
+    #     geom_histogram(fill='grey', color='black') +
+    #     theme_classic() + 
+    #     # scale_x_continuous(breaks=c(0,500), limits = c(0,500)) +
+    #     xlab('Cumulative infections in 100 days') + ylab('Likelihood')
+
     median_infections <- median(total_infections2$allinfections)
-    #l95_infections <- quantile(total_infections2$allinfections, probs = 0.05)
-    #u95_infections <- quantile(total_infections2$allinfections, probs = 0.95)
+    nonewinfections <- percent(length(which(total_infections2$allinfections==input$initial_inf))/length(total_infections2$allinfections))
+    
+    min_infections <- min(total_infections2$allinfections)
+    max_infections <- max(total_infections2$allinfections)
     
     # Average quarantine beds
     
@@ -245,6 +267,18 @@ shinyServer(function(input, output) {
     results_all_quarantined_likelihood <- results_all_quarantined3 %>%
         group_by(run) %>%
         summarise_at(vars(maxQ), list(maxQQ = max))
+    
+    # maxquarplot <- ggplot(results_all_quarantined_likelihood, aes(x=maxQQ)) + 
+    #     geom_histogram(fill='grey', color='black') +
+    #     theme_classic() + 
+    #     # scale_x_continuous(breaks=c(0,100), limits = c(0,100)) +
+    #     xlab('Maximum number of quarantined students') + ylab('Likelihood')
+    
+    output$maxquarplot <- renderPlot(hist(results_all_quarantined_likelihood$maxQQ,
+                                         main="",xlab="Max number of students in quarantine",
+                                         ylab="Percent likelihood"), height=300, width=300)
+    
+             
     
     likelihood_quar_past_cap <- percent(length(which(results_all_quarantined_likelihood$maxQQ>quarantine_capacity_count))/length(results_all_quarantined_likelihood$maxQQ))
     
@@ -300,6 +334,17 @@ shinyServer(function(input, output) {
     results_all_diagnosed_likelihood <- results_all_diagnosed3 %>%
         group_by(run) %>%
         summarise_at(vars(maxD), list(maxDD = max))
+    
+    output$maxisoplot <- renderPlot(hist(results_all_diagnosed_likelihood$maxDD,
+                                         main="",xlab="Max number of students in isolation",
+                                         ylab="Percent likelihood"), height=300, width=300)
+
+
+    # maxisoplot <- ggplot(results_all_diagnosed_likelihood, aes(x=maxDD)) + 
+    #     geom_histogram(fill='grey', color='black') +
+    #     theme_classic() + 
+    #     # scale_x_continuous(breaks=c(0,50), limits = c(0,50)) +
+    #     xlab('Maximum number of isolated students') + ylab('Likelihood')
     
     likelihood_iso_past_cap <- percent(length(which(results_all_diagnosed_likelihood$maxDD>isolation_capacity_count))/length(results_all_diagnosed_likelihood$maxDD))
     
@@ -368,6 +413,11 @@ shinyServer(function(input, output) {
     output$Q1Plot <- renderPlot(quarantined_plot, height=300, width=300)
     output$I1Plot <- renderPlot(infected_plot, height=300, width=300)
     output$R1Plot <- renderPlot(recovered_plot, height=300, width=300)
+    # output$maxquarplot <- renderPlot(maxquarplot, height=300, width=300)
+    # output$maxinfectionsplot <- renderPlot(maxinfectionsplot, height=300, width=300)
+    # output$maxisoplot <- renderPlot(maxisoplot, height=300, width=300)
+    #output$total_inf_hist <- renderPlot(total_inf_hist, height=200, width=200)
+    #output$total_iso_hist
     
     #multiplot1(avg_isolated_plot, avg_quarantine_plot, avg_infectious_plot,quarantined_plot,diagnosed_plot,infected_plot,recovered_plot, cols=2)
     
@@ -378,7 +428,7 @@ shinyServer(function(input, output) {
     })
     
     output$isocaptime <- renderValueBox({
-        valueBox(time_iso_past_cap, "% of time isolation capacity exceeded")
+        valueBox(time_iso_past_cap, "Percent of time isolation capacity exceeded")
     })
     
     output$quarcaplikelihood <- renderValueBox({
@@ -386,13 +436,20 @@ shinyServer(function(input, output) {
     })
     
     output$quarcaptime <- renderValueBox({
-        valueBox(time_quar_past_cap, "% of time isolation capacity exceeded")
+        valueBox(time_quar_past_cap, "Percent of time quarantine capacity exceeded")
     })
     
     output$medianinfections <- renderValueBox({
-        valueBox(median_infections, "Median number infections in 100 days")
+        valueBox(paste(median_infections,"[",min_infections,",",max_infections,"]"), "Median [min,max] number infections in 100 days")
+    })
+    
+
+    output$nonewinfections <- renderValueBox({
+        valueBox(nonewinfections, "Likelihood of no infections post-incoming infections at start of semester")
     })
 
+    
+    
 })
     
      })

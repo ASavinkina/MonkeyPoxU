@@ -5,9 +5,9 @@ account: savinkina
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 6799131
-bundleId: 6221565
+bundleId: 6231152
 url: https://savinkina.shinyapps.io/MonkeyPoxUApp/
-when: 1661035700.62288
-lastSyncTime: 1661035700.6229
+when: 1661293038.15432
+lastSyncTime: 1661293038.15433
 asMultiple: FALSE
 asStatic: FALSE
