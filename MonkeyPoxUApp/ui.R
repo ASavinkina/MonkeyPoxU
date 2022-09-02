@@ -53,7 +53,7 @@ shinyUI(fluidPage(
             #              "Quarantine capacity, daily", min=0,max=100, value=0),
             
             sliderInput("studentcontacts",
-                        "Quarantined contacts per diagnosed student",
+                        "Vaccinated contacts per diagnosed student",
                         min = 0,
                         max = 20,
                         value = 0),
@@ -65,6 +65,12 @@ shinyUI(fluidPage(
                         value = 0,
                         step=0.05),
           
+          sliderInput("vaxefficacy",
+                      "Efficacy of vaccine",
+                      min = 0,
+                      max = 1,
+                      value = 0.8),
+          
           sliderInput("isoduration",
                       "Duration of isolation",
                       min = 21,
@@ -72,12 +78,12 @@ shinyUI(fluidPage(
                       value = 28,
                       step=1),
           
-          sliderInput("quarduration",
-                      "Duration of quarantine",
-                      min = 8,
-                      max = 21,
-                      value = 14,
-                      step=1),
+          # sliderInput("vaxduration",
+          #             "Duration of quarantine",
+          #             min = 8,
+          #             max = 21,
+          #             value = 14,
+          #             step=1),
             
 
             
@@ -96,7 +102,7 @@ shinyUI(fluidPage(
                                     fluidRow(splitLayout(cellWidths = c("33%", "33%","33%"),
                                                          plotOutput("maxinfectionsplot"),
                                                          plotOutput("maxisoplot"),
-                                                         plotOutput("maxquarplot"), width=8)),
+                                                         plotOutput("maxvaxplot"), width=8)),
                                     # fluidRow(valueBoxOutput("isocaplikelihood"),
                                     #          plotOutput("maxisoplot")),
                                     # fluidRow(valueBoxOutput("quarcaplikelihood"),
