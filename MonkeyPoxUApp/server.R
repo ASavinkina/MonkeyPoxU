@@ -1,0 +1,468 @@
+#
+# This is the server logic of a Shiny web application. You can run the
+# application by clicking 'Run App' above.
+#
+# Find out more about building applications with Shiny here:
+#
+#    http://shiny.rstudio.com/
+#
+
+library(shiny)
+library(adaptivetau)
+library(ggplot2)
+library(tidyverse)
+library(shinydashboard)
+library(scales)
+
+# Define server logic required to draw a histogram
+shinyServer(function(input, output) {
+    
+    output$I_plot <- renderPlot({
+        
+        ############# Multiple plot function ###################
+        ## http://www.cookbook-r.com/Graphs/Multiple_graphs_on_one_page_(ggplot2)/ ##
+        
+        multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+            library(grid)
+            
+            # Make a list from the ... arguments and plotlist
+            plots <- c(list(...), plotlist)
+            
+            numPlots = length(plots)
+            
+            # If layout is NULL, then use 'cols' to determine layout
+            if (is.null(layout)) {
+                # Make the panel
+                # ncol: Number of columns of plots
+                # nrow: Number of rows needed, calculated from # of cols
+                layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                                 ncol = cols, nrow = ceiling(numPlots/cols))
+            }
+            
+            if (numPlots==1) {
+                print(plots[[1]])
+                
+            } else {
+                # Set up the page
+                grid.newpage()
+                pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+                
+                # Make each plot, in the correct location
+                for (i in 1:numPlots) {
+                    # Get the i,j matrix positions of the regions that contain this subplot
+                    matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+                    
+                    print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                                    layout.pos.col = matchidx$col))
+                }
+            } 
+        }
+    
+    
+    # Intiial conditions
+    
+    Yale_undegrad_pop = input$Yale_undegrad_pop #input$Yale_undegrad_pop # total population
+    initial_inf= input$initial_inf #input$initial_inf # initial infections
+    Vaccine_Efficacy = input$vaxefficacy
+    Vaccine_Efficacy_PEP = Vaccine_Efficacy * 0.5
+    exogshock =1 #size of exogenous shock. 0 for no exogenous shocks, >1 for superspreader events
+    exograte = ifelse(input$exograte==0, 0, input$exograte/100)  # rate of exogenous shocks
+    recoveryrate = 1/21
+    diagrate = ifelse(input$diagrate>0.95, 1, (input$diagrate*recoveryrate)/(1-input$diagrate)) # daily rate of diagnosis of infectious cases
+    isorate = 1/input$isoduration #duration of isolation
+    studentcontacts = input$studentcontacts # students vaccinated per diagnosed case
+    R0_h= input$R0_h
+        
+        # Yale_undegrad_pop = 6500 # total population
+        # initial_inf = 10 # initial infections
+        # exogshock =0 #size of exogenous shock. 0 for no exogenous shocks, >1 for superspreader events
+        # exograte = 1/30 # rate of exogenous shocks
+        # diagrate = 1/10 # daily rate of diagnosis of infectious cases
+        # vaxduration = 1/14 # duration of vaccinate for non-infected
+        # studentcontacts = 5 # students vaccinated per diagnosed case
+        # R0_h = 1.5
+    
+    
+        init.values = c(
+            S_h = Yale_undegrad_pop-initial_inf, P_h = 0, I_h = initial_inf, Dx0_h=0, Dx_h=0, 
+            Vs_h=0, Vi_h=0, R_h=0
+        )
+    
+    # Specify all transitions
+    transitions = list(
+        c(S_h = -1, P_h = +1), # movement from susceptible to presymptomatic, endogenous infection
+        c(S_h = -1, P_h = +1), # movement from susceptible to presymptomatic, exogenous infection 
+        c(S_h= -1, Vs_h= +1), #movement from susceptible to vaccinated susceptible
+        c(P_h= -1, Vi_h= +1), #movement from presymptomatuc to vaccinated infected
+        #c(Vs_h= -1, S_h= +1), #movement from vaccinated susceptible back to susceptible
+        #c(Vi_h= -1, I_h= +1), #movement from vaccinated infected to infected
+        c(P_h = -1, I_h = +1), #movement from presymptomatic to infected 
+        c(I_h = -1, Dx0_h = +1),  #movement from infected to newly diagnosed
+        c(Dx0_h = -1, Dx_h = +1), #movement from newly diagnosed to diagnosed
+        #c(Vi_h = -1, Dx_h = +1), #movement from vaccinated infected to diagnosed
+        c(I_h = -1, R_h = +1), #movement from infected to recovered
+        c(Dx_h= -1, R_h= +1) #movement from diagnosed to recovered
+        
+    )
+    
+    # Rates for all transitions
+    # (In same order as "transitions")
+    RateF <- function(x, pars, times) {
+        return(c(
+            pars$beta_h*x["S_h"]*x["I_h"]/(x["S_h"] + x["P_h"] + x["I_h"] + x["R_h"]), # movement from susceptible to presymptomatic, endogenous infection
+            pars$theta, # movement from susceptible to presymptomatic, exogenous infection
+            ifelse(x["P_h"]>1,pars$iota*x["Dx0_h"]*(1-pars$attackrate)*pars$Vaccine_Efficacy,pars$iota*x["Dx0_h"]*pars$Vaccine_Efficacy),
+            #pars$iota*x["Dx0_h"]*(1-pars$attackrate), #movement from susceptible to vaccinated susceptible (based on number newly diagnosed)
+            ifelse(x["P_h"]>1, pars$iota*x["Dx0_h"]*pars$attackrate*pars$Vaccine_Efficacy_PEP, 0), #movement from susceptible to vaccinated infected (based on number newly diagnosed)
+            #pars$iota*x["Dx0_h"]*pars$attackrate
+            #pars$omega*x["Vs_h"], #movement from vaccinated susceptible back to susceptible
+            #pars$omega*x["Vi_h"], #movement from vaccinated infected to infected
+            pars$gamma*x["P_h"], #movement from presymptomatic to infected (duration of incubation)
+            pars$delta*x["I_h"], #movement from infected to diagnosed
+            pars$tau*x["Dx0_h"], #movement from newly diagnosed to diagnosed
+            #pars$mu*x["Vi_h"], #movement from vaccinated infected to diagnosed
+            pars$rho*x["I_h"], #movement from infected to recovered
+            pars$omicron*x["Dx_h"] #movement from diagnosed to recovered 
+        ))
+    }
+
+    
+    # Setting parameters
+    pars = list(
+        beta_h= R0_h * (1/21), #(6*0.1)*(1/14), # beta
+        gamma= 1/7.6, #incubation period
+        delta= diagrate,  #diagnosis rate
+        rho= recoveryrate, #recovery rate
+        tau = 1, #rate of moving from newly diagnosed to diagnosed
+        iota= studentcontacts, # students vaccinated per diagnosed case
+        mu = 1/7.6, #incubation period for those in vaccination
+        #omega = vaxrate, #length of vaccination for susceptible
+        attackrate=0.2, 
+        theta= exograte, #rate of exogenous shocks
+        omicron = isorate,
+        Vaccine_Efficacy=Vaccine_Efficacy,
+        Vaccine_Efficacy_PEP = Vaccine_Efficacy_PEP
+    )
+    
+    
+    # Running stochastic model
+    
+    
+    # results = as.data.frame(ssa.adaptivetau(init.values, 
+    #                                         transitions, 
+    #                                         RateF, 
+    #                                         pars, 
+    #                                         tf=100))
+    
+    #Running stochastic model 1,000 times
+    
+    #  Create dataset
+    
+    
+    
+    results_all_presymptomatic <- data.frame(matrix(0, nrow=0, ncol=3))
+    colnames(results_all_presymptomatic) <- c("time", "P_h", "run")
+    results_all_infected <- data.frame(matrix(0, nrow=0, ncol=3))
+    colnames(results_all_infected) <- c("time", "I_h", "run")
+    results_all_diagnosed <- data.frame(matrix(0, nrow=0, ncol=3))
+    colnames(results_all_diagnosed) <- c("time", "Dx_h", "run")
+    results_all_recovered <- data.frame(matrix(0, nrow=0, ncol=3))
+    colnames(results_all_recovered) <- c("time", "R_h", "run")
+    results_all_newlydiagnosed <- data.frame(matrix(0, nrow=0, ncol=3))
+    colnames(results_all_newlydiagnosed) <- c("time", "Dx0_h", "run")
+    results_all_vaccinated<- data.frame(matrix(0, nrow=0, ncol=3))
+    colnames(results_all_vaccinated) <- c("time", "Dx0_h", "run")
+    
+    runs=100
+    
+    #set.seed(1)
+    
+    
+    for (i in 1:runs) {
+        
+        
+        results = as.data.frame(ssa.adaptivetau(init.values, 
+                                                transitions, 
+                                                RateF, 
+                                                pars, 
+                                                tf=100))
+        
+        results_presymptomatic_i <- results[,c(1,3)]
+        results_presymptomatic_i$run <- paste0(i)
+        
+        results_all_presymptomatic <- rbind(results_all_presymptomatic, results_presymptomatic_i)
+        
+        results_infected_i <- results[,c(1,4)]
+        results_infected_i$run <- paste0(i)
+        
+        results_all_infected <- rbind(results_all_infected, results_infected_i)
+        
+        results_newlydiagnosed_i <- results[,c(1,5)]
+        results_newlydiagnosed_i$run <- paste0(i)
+        
+        results_all_newlydiagnosed <- rbind(results_all_newlydiagnosed, results_newlydiagnosed_i)
+        
+        results_diagnosed_i <- results[,c(1,6)]
+        results_diagnosed_i$run <- paste0(i)
+        
+        results_all_diagnosed <- rbind(results_all_diagnosed, results_diagnosed_i)
+        
+        results_recovered_i <- results[,c(1,9)] 
+        results_recovered_i$run <- paste0(i)
+        
+        results_all_recovered <- rbind(results_all_recovered, results_recovered_i)
+        
+        results_vaccinated_i <- results[,c(1,7)] /Vaccine_Efficacy
+        results_vaccinated_i[,2] <- results_vaccinated_i[,2] + (results[,8] /Vaccine_Efficacy_PEP)
+        results_vaccinated_i$run <- paste0(i)
+        
+        results_all_vaccinated <- rbind(results_all_vaccinated, results_vaccinated_i)
+        
+        
+    }
+    
+
+    # Total infections
+    
+    total_infections <- results_all_recovered
+    
+    total_infections$allinfections <- total_infections$R_h + results_all_diagnosed$Dx_h + results_all_newlydiagnosed$Dx0_h +
+        results_all_infected$I_h + results_all_presymptomatic$P_h
+    
+    total_infections2 <- total_infections[which(total_infections$time==100),]
+    
+    output$maxinfectionsplot <- renderPlot(hist(total_infections2$allinfections,
+                                             main="",xlab="Cumulative number of cases at 100 days",
+                                             ylab="Percent likelihood", breaks=30),
+                                            width=300, height=300)
+    
+    # maxinfectionsplot <- ggplot(total_infections2, aes(x=allinfections)) + 
+    #     geom_histogram(fill='grey', color='black') +
+    #     theme_classic() + 
+    #     # scale_x_continuous(breaks=c(0,500), limits = c(0,500)) +
+    #     xlab('Cumulative infections in 100 days') + ylab('Likelihood')
+    
+    # Calculate expected number of infections
+    
+    expected_infections <- input$exograte+input$initial_inf
+    
+    # Calculate mean number of infections (assuming secondary infections) and likelihood of new infections (confusingly called "no. new infections")
+
+    mean_infections <- round(mean(total_infections2$allinfections[total_infections2$allinfections>expected_infections]),0)
+    nonewinfections <- percent(length(total_infections2$allinfections[total_infections2$allinfections>expected_infections])/runs)
+    
+    # Calculate min and max of total number of infections (assuming secondary infections)
+    
+    min_infections <- min(total_infections2$allinfections[total_infections2$allinfections>expected_infections])
+    max_infections <- max(total_infections2$allinfections[total_infections2$allinfections>expected_infections])
+    
+    # Average vaccinate beds
+    
+    results_all_vaccinated2 <- results_all_vaccinated
+    
+    results_all_vaccinated2$time2 <- round(results_all_vaccinated2$time)
+    
+    results_all_vaccinated3 <- results_all_vaccinated2 %>%
+        group_by(run,time2) %>%
+        summarise_at(vars(Vs_h), list(maxQ = max))
+    
+    # Time exceeding vaccinate capacity
+    
+   # time_vax_past_cap <- percent(length(which(results_all_vaccinated3$maxQ>vaccinate_capacity_count))/length(results_all_vaccinated3$maxQ))
+    
+    # Likelihood exceeding vaccinate capacity
+    
+    results_all_vaccinated_likelihood <- results_all_vaccinated3 %>%
+        group_by(run) %>%
+        summarise_at(vars(maxQ), list(maxQQ = max))
+    
+    # maxvaxplot <- ggplot(results_all_vaccinated_likelihood, aes(x=maxQQ)) + 
+    #     geom_histogram(fill='grey', color='black') +
+    #     theme_classic() + 
+    #     # scale_x_continuous(breaks=c(0,100), limits = c(0,100)) +
+    #     xlab('Maximum number of vaccinated students') + ylab('Likelihood')
+    
+    output$maxvaxplot <- renderPlot(hist(results_all_vaccinated_likelihood$maxQQ,
+                                         main="",xlab="Max number of students vaccinated",
+                                         ylab="Percent likelihood"), height=300, width=300)
+    
+             
+    
+    #likelihood_vax_past_cap <- percent(length(which(results_all_vaccinated_likelihood$maxQQ>vaccinate_capacity_count))/length(results_all_vaccinated_likelihood$maxQQ))
+    
+    results_all_vaccinated4 <- results_all_vaccinated3 %>%
+        group_by(time2) %>%
+        summarise_at(vars(maxQ), list(nmin=min, Q1=~quantile(., probs = 0.25), Q95l=~quantile(., probs = 0.05),
+                                      median=median, Q3=~quantile(., probs = 0.75),Q95u=~quantile(., probs = 0.95),
+                                      max=max))
+    
+    # avg_vaccinate_plot <- ggplot(data=results_all_vaccinated4, aes(x=time2, y=median)) + geom_line() +
+    #     theme_classic() + theme(legend.position = "none") + 
+    #     geom_ribbon(aes(ymin = Q95l, ymax = Q95u), alpha = 0.1) + xlab("Days") + ylab("Average number of vaccinated students") +
+    #     ggtitle("Average number of vaccinated \nstudents by day, and 95% interval")
+    
+    avg_vaccinate_plot <- ggplot(data=results_all_vaccinated3, aes(x=time2, y=maxQ, group=run)) + geom_line() +
+      theme_classic() + theme(legend.position = "none") + 
+      #geom_ribbon(aes(ymin = Q95l, ymax = Q95u), alpha = 0.1) + 
+      xlab("Days") + ylab("Average number of vaccinated students") +
+      ggtitle("Number of vaccinated \nstudents by day")
+    
+    # Average infections students
+    
+    results_all_infected2 <- results_all_infected
+    
+    results_all_infected2$time2 <- round(results_all_infected2$time)
+    
+    results_all_infected3 <- results_all_infected2 %>%
+        group_by(run,time2) %>%
+        summarise_at(vars(I_h), list(maxI = max))
+    
+    results_all_infected4 <- results_all_infected3 %>%
+        group_by(time2) %>%
+        summarise_at(vars(maxI), list(nmin=min, Q1=~quantile(., probs = 0.25), Q95l=~quantile(., probs = 0.05),
+                                      median=median, Q3=~quantile(., probs = 0.75),Q95u=~quantile(., probs = 0.95),
+                                      max=max))
+    # avg_infectious_plot <- ggplot(data=results_all_infected4, aes(x=time2, y=median)) + geom_line() +
+    #     theme_classic() + theme(legend.position = "none") + 
+    #     geom_ribbon(aes(ymin = Q95l, ymax = Q95u), alpha = 0.1) + xlab("Days") + ylab("Average number of infectious students") +
+    #     ggtitle("Average number of infectious \nstudents by day, and 95% interval")
+    
+    avg_infectious_plot <- ggplot(data=results_all_infected3, aes(x=time2, y=maxI, group=run)) + geom_line(alpha=0.3) +
+      theme_classic() + theme(legend.position = "none") + 
+      #geom_ribbon(aes(ymin = Q95l, ymax = Q95u), alpha = 0.1) + 
+      xlab("Days") + ylab("Average number of infectious students") +
+      ggtitle("Number of infectious \nstudents by day")
+    
+    
+    # Average isolated students 
+    
+    #isolation_capacity_count <- input$isocapacity
+    
+    results_all_diagnosed2 <- results_all_diagnosed 
+    
+    results_all_diagnosed2 <- cbind(results_all_diagnosed, results_all_newlydiagnosed$Dx0_h)
+    
+    results_all_diagnosed2$total <- results_all_diagnosed2$Dx_h + results_all_diagnosed2$`results_all_newlydiagnosed$Dx0_h`
+    
+    results_all_diagnosed2$time2 <- round(results_all_diagnosed2$time)
+    
+    results_all_diagnosed3 <- results_all_diagnosed2 %>%
+        group_by(run,time2) %>%
+        summarise_at(vars(total), list(maxD = max))
+    
+    #time_iso_past_cap <- percent(length(which(results_all_diagnosed3$maxD>isolation_capacity_count))/length(results_all_diagnosed3$maxD))
+    
+    results_all_diagnosed_likelihood <- results_all_diagnosed3 %>%
+        group_by(run) %>%
+        summarise_at(vars(maxD), list(maxDD = max))
+    
+    output$maxisoplot <- renderPlot(hist(results_all_diagnosed_likelihood$maxDD,
+                                         main="",xlab="Max number of students in isolation",
+                                         ylab="Percent likelihood"), height=300, width=300)
+
+
+    # maxisoplot <- ggplot(results_all_diagnosed_likelihood, aes(x=maxDD)) + 
+    #     geom_histogram(fill='grey', color='black') +
+    #     theme_classic() + 
+    #     # scale_x_continuous(breaks=c(0,50), limits = c(0,50)) +
+    #     xlab('Maximum number of isolated students') + ylab('Likelihood')
+    
+    #likelihood_iso_past_cap <- percent(length(which(results_all_diagnosed_likelihood$maxDD>isolation_capacity_count))/length(results_all_diagnosed_likelihood$maxDD))
+    
+    results_all_diagnosed4 <- results_all_diagnosed3 %>%
+        group_by(time2) %>%
+        summarise_at(vars(maxD), list(nmin=min, Q1=~quantile(., probs = 0.25), Q95l=~quantile(., probs = 0.05),
+                                      median=median, Q3=~quantile(., probs = 0.75),Q95u=~quantile(., probs = 0.95),
+                                      max=max))
+    
+    # avg_isolated_plot <- ggplot(data=results_all_diagnosed4, aes(x=time2, y=median)) + geom_line() +
+    #     theme_classic() + theme(legend.position = "none") + 
+    #     geom_ribbon(aes(ymin = Q95l, ymax = Q95u), alpha = 0.1) + xlab("Days") + ylab("Average number of isolated students") +
+    #     ggtitle("Average number of isolated \nstudents by day, and 95% interval")
+    
+    avg_isolated_plot <- ggplot(data=results_all_diagnosed3, aes(x=time2, y=maxD, group=run)) + geom_line(alpha=0.3) +
+      theme_classic() + theme(legend.position = "none") + 
+      #geom_ribbon(aes(ymin = Q95l, ymax = Q95u), alpha = 0.1) + 
+      xlab("Days") + ylab("Average number of isolated students") +
+      ggtitle("Number of isolated \nstudents by day")
+    
+    
+    # graph of presymptomatic over time
+    
+    presymp_plot <- ggplot(data=results_all_presymptomatic, aes(x=time, y=P_h, color=run)) + geom_line(alpha=0.3) +
+        theme_classic() + theme(legend.position = "none") + ylab("Number infected presymptomatic") +
+        xlab("Days")
+    
+    
+    # graph of infected over time
+    
+    infected_plot <- ggplot(data=results_all_infected, aes(x=time, y=I_h, color=run)) + geom_line(alpha=0.3) +
+        theme_classic() + theme(legend.position = "none") + ylab("Number infected symptomatic") +
+        xlab("Days")
+    
+    
+    # graph of new diagnoses
+    
+    ggplot(data=results_all_newlydiagnosed, aes(x=time, y=Dx0_h, color=run)) + geom_line(alpha=0.3)+
+        theme_classic() + theme(legend.position = "none") + ylab("Number newly diagnosed") +
+        xlab("Days")
+    
+    
+    # graph of diagnosed (and isolated) over time
+    
+    diagnosed_plot <- ggplot(data=results_all_diagnosed, aes(x=time, y=Dx_h, color=run)) + geom_line(alpha=0.3)+
+        theme_classic() + theme(legend.position = "none") + ylab("Number in isolation (diagnosed+)") +
+        xlab("Days")
+    
+    
+    #graph of recovered over time
+    
+    recovered_plot <- ggplot(data=results_all_recovered, aes(x=time, y=R_h, color=run)) + geom_line(alpha=0.3)+
+        theme_classic() + theme(legend.position = "none") + ylab("Number recovered (cumulative)") +
+        xlab("Days")
+    
+    
+    # graph of all isolated over time
+    
+    vaccinated_plot <- ggplot(data=results_all_vaccinated, aes(x=time, y=Vs_h, color=run)) + geom_line(alpha=0.3)+
+        theme_classic() + theme(legend.position = "none") + ylab("Number vaccinated") +
+        xlab("Days")
+    
+    mean(results_all_vaccinated$Vs_h)
+    min(results_all_vaccinated$Vs_h)
+    max(results_all_vaccinated$Vs_h)
+    
+    
+    output$DPlot <- renderPlot(avg_isolated_plot, height=300, width=300)
+    output$QPlot <- renderPlot(avg_vaccinate_plot, height=300, width=300)
+    output$IPlot <- renderPlot(avg_infectious_plot, height=300, width=300)
+    output$D1Plot <- renderPlot(diagnosed_plot, height=300, width=300)
+    output$Q1Plot <- renderPlot(vaccinated_plot, height=300, width=300)
+    output$I1Plot <- renderPlot(infected_plot, height=300, width=300)
+    output$R1Plot <- renderPlot(recovered_plot, height=300, width=300)
+    # output$maxvaxplot <- renderPlot(maxvaxplot, height=300, width=300)
+    # output$maxinfectionsplot <- renderPlot(maxinfectionsplot, height=300, width=300)
+    # output$maxisoplot <- renderPlot(maxisoplot, height=300, width=300)
+    #output$total_inf_hist <- renderPlot(total_inf_hist, height=200, width=200)
+    #output$total_iso_hist
+    
+    #multiplot1(avg_isolated_plot, avg_vaccinate_plot, avg_infectious_plot,vaccinated_plot,diagnosed_plot,infected_plot,recovered_plot, cols=2)
+    
+    #multiplot2(avg_isolated_plot, avg_vaccinate_plot, avg_infectious_plot, cols=2)
+    
+
+    
+    output$meaninfections <- renderValueBox({
+        valueBox(paste(mean_infections,"[",min_infections,",",max_infections,"]"), "Mean [min,max] number infections in 100 days, \ngiven initial case infects others")
+    })
+    
+
+    output$nonewinfections <- renderValueBox({
+        valueBox(nonewinfections, "Likelihood of additional infections following initial infections")
+    })
+
+    
+    
+})
+    
+     })
