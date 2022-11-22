@@ -31,13 +31,21 @@ shinyUI(fluidPage(
                       "Average number of infections coming in from outside of university community in 100 days",
                       min = 0,
                       max = 5,
-                      value = 0),
+                      value = 1),
           
           sliderInput("R0_h",
-                      "R0",
-                      min = 0.9,
+                      "R0 in high-risk subgroup",
+                      min = 1,
+                      max = 5,
+                      value = 2.4, 
+                      step=0.2),
+          
+          sliderInput("R0_l",
+                      "R0 in low-risk subgroup",
+                      min = 0.5,
                       max = 2.0,
-                      value = 1.4),
+                      value = 0.8,
+                      step=0.1),
           
           h3("University inputs"),
             sliderInput("Yale_undegrad_pop",
@@ -45,12 +53,19 @@ shinyUI(fluidPage(
                         min = 1000,
                         max = 20000,
                         value = 6500),
-            
-            # sliderInput("isocapacity",
-            #              "Isolation capacity, daily", min=0,max=100, value=0),
-            # 
-            # sliderInput("quarcapacity",
-            #              "Quarantine capacity, daily", min=0,max=100, value=0),
+          
+          sliderInput("HR_prop",
+                      "Proportion of university population in high-risk subgroup:",
+                      min = 0.01,
+                      max = 1,
+                      value = 0.1),
+          
+          sliderInput("propVax",
+                      "Proportion of high-risk sub-group already vaccinated:",
+                      min = 0,
+                      max = 1,
+                      value = 0),
+      
             
             sliderInput("studentcontacts",
                         "Vaccinated contacts per diagnosed student",
@@ -103,7 +118,8 @@ shinyUI(fluidPage(
                                                          plotOutput("maxisoplot"),
                                                          plotOutput("maxvaxplot"), width=8)),
                                     h3("Outbreak summary results over 100 days"),
-                                    fluidRow(valueBoxOutput("nonewinfections"), valueBoxOutput("meaninfections")),
+                                    fluidRow(valueBoxOutput("nonewinfections_hr"), valueBoxOutput("meaninfections_hr")),
+                                    fluidRow(valueBoxOutput("nonewinfections_lr"), valueBoxOutput("meaninfections_lr")),
                                     # fluidRow(valueBoxOutput("isocaplikelihood"),
                                     #          plotOutput("maxisoplot")),
                                     # fluidRow(valueBoxOutput("quarcaplikelihood"),
